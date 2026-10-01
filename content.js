@@ -38,9 +38,6 @@ root.innerHTML = `
         <label for="intrackr-ai-openai-key-select">OpenAI API Key (per install)</label>
         <select id="intrackr-ai-openai-key-select" style="width: 100%; margin-bottom: 4px;">
           <option value="">-- Select API Key --</option>
-          <option value="gsk_placeholder_key_1">Key 1 (Placeholder 1)</option>
-          <option value="gsk_placeholder_key_2">Key 2 (Placeholder 2)</option>
-          <option value="gsk_placeholder_key_3">Key 3 (Placeholder 3)</option>
           <option value="custom">Custom Key...</option>
         </select>
         <div id="intrackr-ai-custom-key-container" class="settings-input-group" style="display: none; margin-bottom: 4px;">
@@ -214,19 +211,9 @@ if (isContextValid()) {
   chrome.storage.local.get(["intrackr_openai_api_key"], (result) => {
     const savedKey = result.intrackr_openai_api_key || "";
     if (savedKey) {
-      const presetKeys = [
-        "gsk_placeholder_key_1",
-        "gsk_placeholder_key_2",
-        "gsk_placeholder_key_3"
-      ];
-      if (presetKeys.includes(savedKey)) {
-        openaiKeySelect.value = savedKey;
-        customKeyContainer.style.display = "none";
-      } else {
-        openaiKeySelect.value = "custom";
-        openaiKeyInput.value = savedKey;
-        customKeyContainer.style.display = "block";
-      }
+      openaiKeySelect.value = "custom";
+      openaiKeyInput.value = savedKey;
+      customKeyContainer.style.display = "block";
       updateSettingsStatus(true);
     } else {
       openaiKeySelect.value = "";
@@ -2049,17 +2036,13 @@ saveSettingsBtn.addEventListener("click", () => {
       return;
     }
   } else {
+    // If selecting default option (value === ""), we save key as empty to use the backend default key
     key = openaiKeySelect.value;
-    if (!key) {
-      settingsStatus.textContent = "Please select or enter an API key before saving.";
-      settingsStatus.className = "error";
-      return;
-    }
   }
   if (isContextValid()) {
     chrome.storage.local.set({ intrackr_openai_api_key: key }, () => {
-      updateSettingsStatus(true);
-      settingsStatus.textContent = "Key saved successfully!";
+      updateSettingsStatus(!!key);
+      settingsStatus.textContent = key ? "Key saved successfully!" : "Saved! Using backend default.";
       settingsStatus.className = "success";
       setTimeout(() => {
         settingsPanel.style.display = "none";

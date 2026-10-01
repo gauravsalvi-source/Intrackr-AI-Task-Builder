@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node --use-system-ca server.js",
+    "dev": "node --use-system-ca server.js",
     "check": "node --check server.js && node --check background.js && node --check content.js"
   }
 }

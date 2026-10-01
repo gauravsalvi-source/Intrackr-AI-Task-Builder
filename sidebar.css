@@ -51,7 +51,8 @@
   right: 20px;
   top: 20px;
   width: 390px;
-  z-index: 999999;
+  z-index: 2147483645 !important;
+  pointer-events: auto !important;
 }
 
 #intrackr-ai-sidebar[hidden],
@@ -407,7 +408,8 @@
   position: fixed;
   right: 20px;
   width: 48px;
-  z-index: 999999;
+  z-index: 2147483645 !important;
+  pointer-events: auto !important;
 }
 
 @media (max-width: 520px) {
@@ -583,7 +585,7 @@
   width: 100vw;
   height: 100vh;
   background: rgba(15, 23, 42, 0.9);
-  z-index: 10000000;
+  z-index: 2147483646 !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -921,7 +923,7 @@
   position: fixed;
   top: 0;
   width: 100vw;
-  z-index: 10000001;
+  z-index: 2147483647 !important;
 }
 
 .subtask-picker-modal {

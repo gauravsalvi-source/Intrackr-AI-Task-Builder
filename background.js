@@ -104,8 +104,31 @@ function decodeInertiaPage(htmlOrJson) {
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
-    .replace(/&#039;/g, "'");
+    .replace(/&#0*39;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+
   return JSON.parse(decodedJson);
+}
+
+async function dataUrlToBlob(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== "string") return null;
+  try {
+    const res = await fetch(dataUrl);
+    return await res.blob();
+  } catch (e) {
+    const arr = dataUrl.split(',');
+    if (arr.length < 2) return null;
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : "image/png";
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  }
 }
 
 function extractTaskFromShowPage(pageData, expectedId) {
@@ -244,16 +267,9 @@ async function buildTaskFormData(payload, xsrfToken) {
   const draftKey = payload.images?.length ? createDraftKey() : null;
 
   const uploadImageBackground = async (imgBase64, sharedDraftKey) => {
-    const arr = imgBase64.split(',');
-    const mime = arr[0].match(/:(.*?);/)[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    const blob = new Blob([u8arr], { type: mime });
-    const ext = mime.split('/')[1] || 'png';
+    const blob = await dataUrlToBlob(imgBase64);
+    if (!blob) throw new Error("Could not convert image to blob");
+    const ext = blob.type.split('/')[1] || 'png';
 
     const uploadFormData = new FormData();
     uploadFormData.append("image", blob, `screenshot_${Date.now()}.${ext}`);
@@ -351,26 +367,17 @@ async function buildTaskFormData(payload, xsrfToken) {
   }
 
   if (payload.images && payload.images.length > 0) {
-    payload.images.forEach((imgBase64, index) => {
+    for (let index = 0; index < payload.images.length; index++) {
       try {
-        if (!imgBase64 || typeof imgBase64 !== "string") return;
-        const arr = imgBase64.split(',');
-        if (arr.length < 2) return;
-        const mimeMatch = arr[0].match(/:(.*?);/);
-        const mime = mimeMatch ? mimeMatch[1] : "image/png";
-        const bstr = atob(arr[1]);
-        let n = bstr.length;
-        const u8arr = new Uint8Array(n);
-        while (n--) {
-          u8arr[n] = bstr.charCodeAt(n);
-        }
-        const blob = new Blob([u8arr], { type: mime });
-        const ext = mime.split('/')[1] || 'png';
+        const imgBase64 = payload.images[index];
+        const blob = await dataUrlToBlob(imgBase64);
+        if (!blob) continue;
+        const ext = blob.type.split('/')[1] || 'png';
         formData.append("images[]", blob, `screenshot_${index + 1}.${ext}`);
       } catch (e) {
         console.error("Failed to append image blob to request:", e);
       }
-    });
+    }
   }
 
   return { formData, parentId };
@@ -530,26 +537,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })
     .then(response => response.text())
     .then(html => {
-      // Try parsing through Inertia data-page attribute
-      const dataPageMatch = html.match(/data-page="([^"]+)"/);
-      if (dataPageMatch) {
-        try {
-          // Decode HTML entities
-          const decodedJson = dataPageMatch[1]
-            .replace(/&quot;/g, '"')
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&#039;/g, "'");
-          const pageData = JSON.parse(decodedJson);
-
+      try {
+        const pageData = decodeInertiaPage(html);
+        if (pageData && pageData.props) {
           // Dump props to local/configured server
           fetch(`${backendUrl}/dump-props`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(pageData.props || {})
           }).catch(err => {
-            console.warn("Failed to dump props (this is normal if the backend is offline or doesn't support dump-props):", err.message);
+            console.warn("Failed to dump props:", err.message);
           });
 
           const projects = pageData.props?.projects || [];
@@ -564,9 +561,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
             return;
           }
-        } catch(e) {
-          console.error("Failed parsing Inertia props:", e);
         }
+      } catch(e) {
+        console.error("Failed parsing Inertia props:", e);
       }
       sendResponse({ success: false, error: "Failed to parse projects from InTrackr." });
     })

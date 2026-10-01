@@ -5,11 +5,11 @@ const path = require("path");
 loadEnvFile();
 clearDeadLocalProxy();
 
-const OPENAI_API_URL = "https://api.openai.com/v1/responses";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const AI_PROVIDER = process.env.GROQ_API_KEY ? "groq" : "openai";
 const MODEL = AI_PROVIDER === "groq"
-  ? process.env.GROQ_MODEL || "llama-3.1-8b-instant"
+  ? process.env.GROQ_MODEL || "llama-3.3-70b-versatile"
   : process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
 function loadEnvFile() {
@@ -56,8 +56,24 @@ function clearDeadLocalProxy() {
 function parseJsonFromText(text) {
   const trimmed = text.trim();
   const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const jsonText = fencedMatch ? fencedMatch[1].trim() : trimmed;
-  return JSON.parse(jsonText);
+  if (fencedMatch) {
+    try {
+      return JSON.parse(fencedMatch[1].trim());
+    } catch (e) {
+      // Continue to fallback parsing
+    }
+  }
+
+  const objMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (objMatch) {
+    try {
+      return JSON.parse(objMatch[0].trim());
+    } catch (e) {
+      // Continue to direct parse
+    }
+  }
+
+  return JSON.parse(trimmed);
 }
 
 // Clean prefixes from lists (e.g. "1. Step" -> "Step")
@@ -123,7 +139,10 @@ async function createTask(req, res) {
   try {
     const { prompt, priority = "Medium", type = "Bug", pageUrl = "", image = "", images = [], consoleLogs = [] } = await readJsonBody(req);
 
-    const clientApiKey = req.headers["x-openai-api-key"];
+    let clientApiKey = req.headers["x-openai-api-key"];
+    if (clientApiKey === "null" || clientApiKey === "undefined" || clientApiKey === "custom") {
+      clientApiKey = "";
+    }
     let activeProvider = AI_PROVIDER;
     if (clientApiKey) {
       activeProvider = clientApiKey.startsWith("gsk_") ? "groq" : "openai";
@@ -152,12 +171,12 @@ async function createTask(req, res) {
     }
 
     let activeModel = activeProvider === "groq"
-      ? process.env.GROQ_MODEL || "llama-3.1-8b-instant"
+      ? process.env.GROQ_MODEL || "llama-3.3-70b-versatile"
       : process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
     if (allImages.length > 0) {
       if (activeProvider === "groq") {
-        activeModel = process.env.GROQ_VISION_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
+        activeModel = process.env.GROQ_VISION_MODEL || "llama-3.2-11b-vision-preview";
       } else {
         activeModel = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
       }
@@ -216,7 +235,7 @@ Write it for developers who need to understand, reproduce, fix, and verify the i
 
     let userContent;
     if (allImages.length > 0) {
-      if (AI_PROVIDER === "groq") {
+      if (activeProvider === "groq") {
         userContent = [
           {
             type: "text",
@@ -264,17 +283,11 @@ Write it for developers who need to understand, reproduce, fix, and verify the i
         "Authorization": `Bearer ${activeApiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(activeProvider === "groq"
-        ? {
-            model: activeModel,
-            messages,
-            temperature: 0.2
-          }
-        : {
-            model: activeModel,
-            input: messages,
-            temperature: 0.2
-          })
+      body: JSON.stringify({
+        model: activeModel,
+        messages,
+        temperature: 0.2
+      })
     });
 
     const data = await response.json();
