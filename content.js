@@ -1,17 +1,30 @@
 (() => {
 const DEFAULT_API_BASE = "https://intrackr-ai-task-builder-1.onrender.com";
+let cachedApiBase = null;
+let lastApiProbeTime = 0;
+const API_PROBE_CACHE_TTL = 3 * 60 * 1000;
 
 async function getApiBase() {
+  const now = Date.now();
+  if (cachedApiBase && (now - lastApiProbeTime < API_PROBE_CACHE_TTL)) {
+    return cachedApiBase;
+  }
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 600);
     const localRes = await fetch("http://localhost:3000/", { method: "GET", signal: controller.signal });
     clearTimeout(timeoutId);
-    if (localRes.ok) return "http://localhost:3000";
+    if (localRes.ok) {
+      cachedApiBase = "http://localhost:3000";
+      lastApiProbeTime = now;
+      return cachedApiBase;
+    }
   } catch (e) {
     // Local server not reachable, use default cloud endpoint
   }
-  return DEFAULT_API_BASE;
+  cachedApiBase = DEFAULT_API_BASE;
+  lastApiProbeTime = now;
+  return cachedApiBase;
 }
 
 function isContextValid() {

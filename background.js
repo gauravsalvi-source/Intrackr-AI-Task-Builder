@@ -505,23 +505,40 @@ chrome.action.onClicked.addListener((tab) => {
   startCaptureFromAction(tab);
 });
 
+let cachedServerUrl = null;
+let lastProbeTime = 0;
+const PROBE_CACHE_TTL = 3 * 60 * 1000; // Cache probe for 3 minutes
+
+async function resolveServerUrl() {
+  const now = Date.now();
+  if (cachedServerUrl && (now - lastProbeTime < PROBE_CACHE_TTL)) {
+    return cachedServerUrl;
+  }
+
+  let serverUrl = "https://intrackr-ai-task-builder-1.onrender.com";
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600);
+    const localCheck = await fetch("http://localhost:3000/", { method: "GET", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (localCheck.ok) {
+      serverUrl = "http://localhost:3000";
+    }
+  } catch (e) {
+    // Fall back to cloud server
+  }
+
+  cachedServerUrl = serverUrl;
+  lastProbeTime = now;
+  return serverUrl;
+}
+
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "createAiTask") {
     (async () => {
       try {
-        let serverUrl = "https://intrackr-ai-task-builder-1.onrender.com";
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 600);
-          const localCheck = await fetch("http://localhost:3000/", { method: "GET", signal: controller.signal });
-          clearTimeout(timeoutId);
-          if (localCheck.ok) {
-            serverUrl = "http://localhost:3000";
-          }
-        } catch (e) {
-          // Fall back to cloud server
-        }
+        let serverUrl = await resolveServerUrl();
 
         const headers = {
           "Content-Type": "application/json"
@@ -530,11 +547,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           headers["x-openai-api-key"] = request.customKey;
         }
 
-        const response = await fetch(`${serverUrl}/create-task`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(request.payload || {})
-        });
+        let response;
+        try {
+          response = await fetch(`${serverUrl}/create-task`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(request.payload || {})
+          });
+        } catch (fetchErr) {
+          // If cached localhost:3000 is no longer available, fall back to cloud server
+          if (serverUrl === "http://localhost:3000") {
+            cachedServerUrl = "https://intrackr-ai-task-builder-1.onrender.com";
+            lastProbeTime = Date.now();
+            serverUrl = cachedServerUrl;
+            response = await fetch(`${serverUrl}/create-task`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(request.payload || {})
+            });
+          } else {
+            throw fetchErr;
+          }
+        }
 
         const data = await response.json();
         if (!response.ok) {
