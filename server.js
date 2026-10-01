@@ -219,7 +219,7 @@ async function createTask(req, res) {
 
     if (allImages.length > 0) {
       if (activeProvider === "openrouter") {
-        activeModel = process.env.OPENROUTER_VISION_MODEL || "qwen/qwen3.8-27b";
+        activeModel = process.env.OPENROUTER_VISION_MODEL || "google/gemini-2.0-flash-001";
       } else if (activeProvider === "groq") {
         activeModel = process.env.GROQ_VISION_MODEL || "qwen/qwen3.8-27b";
       } else {
@@ -399,6 +399,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && req.url === "/dump-props") {
+    if (process.env.NODE_ENV === "production") {
+      sendJson(res, 403, { error: "Debug endpoints are disabled in production." });
+      return;
+    }
     try {
       const body = await readJsonBody(req);
       fs.writeFileSync(path.join(__dirname, "props_dump.json"), JSON.stringify(body, null, 2), "utf8");

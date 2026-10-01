@@ -616,14 +616,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         const pageData = decodeInertiaPage(html);
         if (pageData && pageData.props) {
-          // Dump props to local/configured server
-          fetch(`${backendUrl}/dump-props`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(pageData.props || {})
-          }).catch(err => {
-            console.warn("Failed to dump props:", err.message);
-          });
+          // Dump props only during local development debugging
+          if (backendUrl.includes("localhost")) {
+            fetch(`${backendUrl}/dump-props`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(pageData.props || {})
+            }).catch(err => {
+              console.warn("Failed to dump props:", err.message);
+            });
+          }
 
           const projects = pageData.props?.projects || [];
           const users = pageData.props?.users || [];
