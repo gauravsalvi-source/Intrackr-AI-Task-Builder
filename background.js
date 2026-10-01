@@ -1,6 +1,6 @@
 // background.js for Intrackr AI Task Builder Extension
 
-const backendUrl = "https://intrackr-ai-task-studio-1.onrender.com";
+const backendUrl = "https://intrackr-ai-task-builder-1.onrender.com";
 let isCreatingTaskInTrackr = false;
 
 function normalizeSearchTask(task) {
@@ -510,7 +510,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "createAiTask") {
     (async () => {
       try {
-        let serverUrl = "https://intrackr-ai-task-studio-1.onrender.com";
+        let serverUrl = "https://intrackr-ai-task-builder-1.onrender.com";
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 600);

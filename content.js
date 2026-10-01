@@ -1,5 +1,5 @@
 (() => {
-const DEFAULT_API_BASE = "https://intrackr-ai-task-studio-1.onrender.com";
+const DEFAULT_API_BASE = "https://intrackr-ai-task-builder-1.onrender.com";
 
 async function getApiBase() {
   try {
