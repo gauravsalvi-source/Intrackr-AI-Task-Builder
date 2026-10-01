@@ -507,6 +507,48 @@ chrome.action.onClicked.addListener((tab) => {
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "createAiTask") {
+    (async () => {
+      try {
+        let serverUrl = "https://intrackr-ai-task-studio-1.onrender.com";
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 600);
+          const localCheck = await fetch("http://localhost:3000/", { method: "GET", signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (localCheck.ok) {
+            serverUrl = "http://localhost:3000";
+          }
+        } catch (e) {
+          // Fall back to cloud server
+        }
+
+        const headers = {
+          "Content-Type": "application/json"
+        };
+        if (request.customKey) {
+          headers["x-openai-api-key"] = request.customKey;
+        }
+
+        const response = await fetch(`${serverUrl}/create-task`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(request.payload || {})
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          sendResponse({ success: false, error: data.error || `Request failed (${response.status})` });
+        } else {
+          sendResponse({ success: true, task: data.task });
+        }
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
   if (request.action === "captureVisibleTab") {
     const windowId = sender.tab?.windowId;
 

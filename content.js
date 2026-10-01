@@ -1,5 +1,18 @@
 (() => {
-const API_BASE = "https://intrackr-ai-task-studio-1.onrender.com";
+const DEFAULT_API_BASE = "https://intrackr-ai-task-studio-1.onrender.com";
+
+async function getApiBase() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600);
+    const localRes = await fetch("http://localhost:3000/", { method: "GET", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (localRes.ok) return "http://localhost:3000";
+  } catch (e) {
+    // Local server not reachable, use default cloud endpoint
+  }
+  return DEFAULT_API_BASE;
+}
 
 function isContextValid() {
   try {
@@ -35,13 +48,13 @@ root.innerHTML = `
 
     <div id="intrackr-ai-settings-panel" style="display: none;">
       <div class="settings-content">
-        <label for="intrackr-ai-openai-key-select">OpenAI API Key (per install)</label>
+        <label for="intrackr-ai-openai-key-select">API Key (OpenRouter / Groq / OpenAI)</label>
         <select id="intrackr-ai-openai-key-select" style="width: 100%; margin-bottom: 4px;">
           <option value="">-- Select API Key --</option>
           <option value="custom">Custom Key...</option>
         </select>
         <div id="intrackr-ai-custom-key-container" class="settings-input-group" style="display: none; margin-bottom: 4px;">
-          <input id="intrackr-ai-openai-key" type="password" placeholder="Enter sk-proj-... / gsk_..." />
+          <input id="intrackr-ai-openai-key" type="password" placeholder="Enter sk-or-v1-... / gsk_... / sk-..." />
         </div>
         <div class="settings-input-group" style="justify-content: flex-end;">
           <button id="intrackr-ai-save-settings" type="button" class="primary">Save</button>
@@ -1361,33 +1374,48 @@ async function generateTask() {
       }
     });
 
-    const headers = {
-      "Content-Type": "application/json"
+    const payload = {
+      prompt,
+      priority: document.getElementById("intrackr-ai-priority").value,
+      type: document.getElementById("intrackr-ai-type").value,
+      project: projectInput.value.trim(),
+      pageUrl: window.location.href,
+      images: selectedImages
     };
-    if (customKey) {
-      headers["x-openai-api-key"] = customKey;
+
+    let result;
+    if (isContextValid()) {
+      result = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: "createAiTask",
+          payload,
+          customKey
+        }, response => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            resolve(response || { success: false, error: "Empty response from background" });
+          }
+        });
+      });
+    } else {
+      const apiBase = await getApiBase();
+      const headers = { "Content-Type": "application/json" };
+      if (customKey) headers["x-openai-api-key"] = customKey;
+      const res = await fetch(`${apiBase}/create-task`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      result = res.ok ? { success: true, task: data.task } : { success: false, error: data.error };
     }
 
-    const response = await fetch(`${API_BASE}/create-task`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        prompt,
-        priority: document.getElementById("intrackr-ai-priority").value,
-        type: document.getElementById("intrackr-ai-type").value,
-        project: projectInput.value.trim(),
-        pageUrl: window.location.href,
-        images: selectedImages
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Unable to create task");
+    if (!result || !result.success) {
+      throw new Error(result?.error || "Unable to create task");
     }
 
-    generatedTask = data.task;
+    generatedTask = result.task;
     titleInput.value = generatedTask.title || "";
     output.value = taskToText(generatedTask);
     setStatus("Task ready. Review it, then fill the form.");

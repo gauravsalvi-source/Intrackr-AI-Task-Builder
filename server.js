@@ -63,26 +63,46 @@ function clearDeadLocalProxy() {
 }
 
 function parseJsonFromText(text) {
+  if (!text || typeof text !== "string") return {};
   const trimmed = text.trim();
   const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fencedMatch) {
-    try {
-      return JSON.parse(fencedMatch[1].trim());
-    } catch (e) {
-      // Continue to fallback parsing
-    }
-  }
-
+  const candidates = [fencedMatch ? fencedMatch[1].trim() : null, trimmed];
   const objMatch = trimmed.match(/\{[\s\S]*\}/);
-  if (objMatch) {
+  if (objMatch) candidates.push(objMatch[0].trim());
+
+  for (const raw of candidates) {
+    if (!raw) continue;
     try {
-      return JSON.parse(objMatch[0].trim());
+      return JSON.parse(raw);
     } catch (e) {
-      // Continue to direct parse
+      // Continue to sanitization
+    }
+
+    try {
+      const sanitized = raw
+        .replace(/,\s*([}\]])/g, "$1")
+        .replace(/\\(?!["\\/bfnrtu]|u[0-9a-fA-F]{4})/g, "\\\\");
+      return JSON.parse(sanitized);
+    } catch (e) {
+      // Continue to next candidate
     }
   }
 
-  return JSON.parse(trimmed);
+  // Regex fallback field extractor if JSON is completely malformed
+  const getField = (fieldName) => {
+    const match = trimmed.match(new RegExp(`"${fieldName}"\\s*:\\s*"([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"`, "i"));
+    return match ? match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").trim() : "";
+  };
+
+  return {
+    title: getField("title") || "Generated Task",
+    type: getField("type") || "Bug",
+    priority: getField("priority") || "Medium",
+    description: getField("description") || trimmed,
+    expectedResult: getField("expectedResult") || "",
+    actualResult: getField("actualResult") || "",
+    steps: []
+  };
 }
 
 // Clean prefixes from lists (e.g. "1. Step" -> "Step")
