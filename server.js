@@ -219,7 +219,7 @@ async function createTask(req, res) {
 
     if (allImages.length > 0) {
       if (activeProvider === "openrouter") {
-        activeModel = process.env.OPENROUTER_VISION_MODEL || "google/gemini-2.0-flash-001";
+        activeModel = process.env.OPENROUTER_VISION_MODEL || "qwen/qwen3.8-27b";
       } else if (activeProvider === "groq") {
         activeModel = process.env.GROQ_VISION_MODEL || "qwen/qwen3.8-27b";
       } else {
