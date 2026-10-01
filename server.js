@@ -7,8 +7,17 @@ clearDeadLocalProxy();
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const AI_PROVIDER = process.env.GROQ_API_KEY ? "groq" : "openai";
-const MODEL = AI_PROVIDER === "groq"
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+const AI_PROVIDER = process.env.OPENROUTER_API_KEY
+  ? "openrouter"
+  : process.env.GROQ_API_KEY
+  ? "groq"
+  : "openai";
+
+const MODEL = AI_PROVIDER === "openrouter"
+  ? process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct"
+  : AI_PROVIDER === "groq"
   ? process.env.GROQ_MODEL || "llama-3.3-70b-versatile"
   : process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
@@ -145,17 +154,26 @@ async function createTask(req, res) {
     }
     let activeProvider = AI_PROVIDER;
     if (clientApiKey) {
-      activeProvider = clientApiKey.startsWith("gsk_") ? "groq" : "openai";
+      if (clientApiKey.startsWith("sk-or-v1-")) {
+        activeProvider = "openrouter";
+      } else if (clientApiKey.startsWith("gsk_")) {
+        activeProvider = "groq";
+      } else {
+        activeProvider = "openai";
+      }
     }
-    const activeApiKey = clientApiKey || (activeProvider === "groq" ? process.env.GROQ_API_KEY : process.env.OPENAI_API_KEY);
+    const activeApiKey = clientApiKey || (
+      activeProvider === "openrouter"
+        ? process.env.OPENROUTER_API_KEY
+        : activeProvider === "groq"
+        ? process.env.GROQ_API_KEY
+        : process.env.OPENAI_API_KEY
+    );
 
-    if (activeProvider === "openai" && !activeApiKey) {
+    if (!activeApiKey) {
+      const providerLabel = activeProvider === "openrouter" ? "OpenRouter" : activeProvider === "groq" ? "Groq" : "OpenAI";
       return sendJson(res, 400, {
-        error: "OpenAI API key is missing. Please save your API key in the extension settings or configure the backend."
-      });
-    } else if (activeProvider === "groq" && !activeApiKey) {
-      return sendJson(res, 400, {
-        error: "Groq API key is missing. Please save your API key in the extension settings or configure the backend."
+        error: `${providerLabel} API key is missing. Please save your API key in the extension settings or configure the backend.`
       });
     }
 
@@ -170,12 +188,19 @@ async function createTask(req, res) {
       });
     }
 
-    let activeModel = activeProvider === "groq"
-      ? process.env.GROQ_MODEL || "llama-3.3-70b-versatile"
-      : process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    let activeModel;
+    if (activeProvider === "openrouter") {
+      activeModel = process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct";
+    } else if (activeProvider === "groq") {
+      activeModel = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+    } else {
+      activeModel = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+    }
 
     if (allImages.length > 0) {
-      if (activeProvider === "groq") {
+      if (activeProvider === "openrouter") {
+        activeModel = process.env.OPENROUTER_VISION_MODEL || "qwen/qwen3.8-27b";
+      } else if (activeProvider === "groq") {
         activeModel = process.env.GROQ_VISION_MODEL || "qwen/qwen3.8-27b";
       } else {
         activeModel = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
@@ -277,15 +302,28 @@ Write it for developers who need to understand, reproduce, fix, and verify the i
       }
     ];
 
-    const response = await fetch(activeProvider === "groq" ? GROQ_API_URL : OPENAI_API_URL, {
+    const apiUrl = activeProvider === "openrouter"
+      ? OPENROUTER_API_URL
+      : activeProvider === "groq"
+      ? GROQ_API_URL
+      : OPENAI_API_URL;
+
+    const requestHeaders = {
+      "Authorization": `Bearer ${activeApiKey}`,
+      "Content-Type": "application/json"
+    };
+    if (activeProvider === "openrouter") {
+      requestHeaders["HTTP-Referer"] = "https://github.com/gauravsalvi-source/Intrackr-AI-Task-Builder";
+      requestHeaders["X-Title"] = "Intrackr AI Task Builder";
+    }
+
+    const response = await fetch(apiUrl, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${activeApiKey}`,
-        "Content-Type": "application/json"
-      },
+      headers: requestHeaders,
       body: JSON.stringify({
         model: activeModel,
         messages,
+        max_tokens: 2048,
         temperature: 0.2
       })
     });
@@ -293,8 +331,9 @@ Write it for developers who need to understand, reproduce, fix, and verify the i
     const data = await response.json();
 
     if (!response.ok) {
+      const providerLabel = activeProvider === "openrouter" ? "OpenRouter" : activeProvider === "groq" ? "Groq" : "OpenAI";
       return sendJson(res, response.status, {
-        error: data.error?.message || `${activeProvider === "groq" ? "Groq" : "OpenAI"} request failed`
+        error: data.error?.message || `${providerLabel} request failed`
       });
     }
 
